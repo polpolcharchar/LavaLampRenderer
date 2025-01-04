@@ -1,0 +1,101 @@
+#pragma kernel CSMain
+
+struct BallData
+{
+    float2 position;
+    float radius;
+    float gravityScale;
+};
+
+
+
+RWTexture2D<float4> Result;
+RWStructuredBuffer<BallData> balls;
+
+float2 screenDimension;
+float4 coolColor;
+float4 heatColor;
+
+float metaballThreshold;
+int colorSmoothingRadius;
+
+
+[numthreads(8,8,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    
+    float sum = 0;
+    float4 color = float4(1, 0, 0, 1);
+    float closest = 100000;
+
+    
+    //loop over all the balls
+    for(uint i = 0; i < balls.Length; i++)
+    {
+        BallData ball = balls[i];
+        
+        float d = length(ball.position - id.xy);
+        
+        sum += 1 / d / d * ball.radius * ball.radius * ball.radius;
+        
+        if (d < closest)
+        {
+            closest = d;
+            
+            float val = ball.gravityScale * 10;
+            if (val < 0)
+            {
+                val = 0;
+            }
+            
+            
+            color = coolColor * val + heatColor * (1 - val);
+        }
+    }
+    
+    sum /= balls.Length;
+    
+    if (sum > metaballThreshold)
+    {
+        
+        
+        float4 colorTotals = float4(0, 0, 0, 0);
+        int count = 0;
+        
+        for(int i = -colorSmoothingRadius; i <= colorSmoothingRadius; i++)
+        {
+            for(int j = -colorSmoothingRadius; j <= colorSmoothingRadius; j++)
+            {
+                if (i == 0 && j == 0)
+                {
+                    continue;
+                }
+                
+                if(id.x + i < 0 || id.x + i >= screenDimension.x || id.y + j < 0 || id.y + j >= screenDimension.y)
+                {
+                    continue;
+                }
+                
+                float4 c = Result[id.xy + float2(i, j)];
+                
+                if (c.a > 0)
+                {
+                    colorTotals += c;
+                    count++;
+                }
+
+            }
+        }
+        
+        colorTotals += color;
+        count++;
+        
+        Result[id.xy] = float4(colorTotals.r / count, colorTotals.g / count, colorTotals.b / count, 1.0f);
+
+    }
+    else
+    {
+        Result[id.xy] = float4(coolColor.r, coolColor.g, coolColor.b, 0.0f);
+    }
+    
+}
